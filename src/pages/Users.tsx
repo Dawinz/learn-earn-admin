@@ -1,16 +1,16 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
+import { API_ENDPOINTS } from '../config/api';
 import './Users.css';
 
 interface User {
   _id: string;
   deviceId: string;
-  totalEarnings: number;
-  totalPayouts: number;
-  lastActive: string;
-  isBlocked: boolean;
+  totalEarningsUsd: number;
+  totalPayoutsUsd: number;
+  lastActivity: string;
+  status: 'active' | 'blocked';
   createdAt: string;
-  earningsCount: number;
-  payoutsCount: number;
 }
 
 interface UserStats {
@@ -22,6 +22,13 @@ interface UserStats {
   averageEarningPerUser: number;
 }
 
+interface Pagination {
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
 export const Users: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -29,102 +36,121 @@ export const Users: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<'all' | 'active' | 'blocked'>('all');
-  const [sortBy, setSortBy] = useState<'earnings' | 'payouts' | 'lastActive' | 'created'>('earnings');
+  const [sortBy, setSortBy] = useState<'totalEarningsUsd' | 'totalPayoutsUsd' | 'lastActivity' | 'createdAt'>('totalEarningsUsd');
+  const [pagination, setPagination] = useState<Pagination>({ page: 1, limit: 20, total: 0, pages: 0 });
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     try {
       setLoading(true);
-      // Mock data for now - replace with actual API call
-      const mockUsers: User[] = [
-        {
-          _id: '1',
-          deviceId: 'device_123456789',
-          totalEarnings: 15.50,
-          totalPayouts: 12.00,
-          lastActive: new Date().toISOString(),
-          isBlocked: false,
-          createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-          earningsCount: 25,
-          payoutsCount: 3
-        },
-        {
-          _id: '2',
-          deviceId: 'device_987654321',
-          totalEarnings: 8.75,
-          totalPayouts: 5.00,
-          lastActive: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-          isBlocked: false,
-          createdAt: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-          earningsCount: 18,
-          payoutsCount: 2
-        },
-        {
-          _id: '3',
-          deviceId: 'device_555666777',
-          totalEarnings: 22.30,
-          totalPayouts: 20.00,
-          lastActive: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-          isBlocked: true,
-          createdAt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-          earningsCount: 45,
-          payoutsCount: 5
-        }
-      ];
+      setError(null);
+      
+      const params = new URLSearchParams({
+        page: pagination.page.toString(),
+        limit: pagination.limit.toString(),
+        sortKey: sortBy,
+        sortOrder: 'desc'
+      });
+      
+      if (searchTerm) {
+        params.append('filter', searchTerm);
+      }
+      
+      if (filterStatus !== 'all') {
+        params.append('status', filterStatus);
+      }
 
-      const mockStats: UserStats = {
-        totalUsers: 150,
-        activeUsers: 89,
-        blockedUsers: 3,
-        totalEarnings: 1250.75,
-        totalPayouts: 980.50,
-        averageEarningPerUser: 8.34
-      };
-
-      setUsers(mockUsers);
-      setStats(mockStats);
+      const response = await axios.get(`${API_ENDPOINTS.USERS}?${params}`);
+      setUsers(response.data.users);
+      setPagination(response.data.pagination);
     } catch (err) {
       setError('Failed to load users data');
       console.error('Users error:', err);
     } finally {
       setLoading(false);
     }
-  };
+  }, [pagination.page, pagination.limit, sortBy, searchTerm, filterStatus]);
 
-  const filteredUsers = users.filter(user => {
-    const matchesSearch = user.deviceId.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesFilter = filterStatus === 'all' || 
-      (filterStatus === 'active' && !user.isBlocked) ||
-      (filterStatus === 'blocked' && user.isBlocked);
-    return matchesSearch && matchesFilter;
-  });
+  const fetchUserStats = useCallback(async () => {
+    try {
+      // Get all users for stats calculation
+      const response = await axios.get(`${API_ENDPOINTS.USERS}?limit=1000`);
+      const allUsers = response.data.users;
+      
+      const totalUsers = allUsers.length;
+      const activeUsers = allUsers.filter((user: User) => user.status === 'active').length;
+      const blockedUsers = allUsers.filter((user: User) => user.status === 'blocked').length;
+      const totalEarnings = allUsers.reduce((sum: number, user: User) => sum + user.totalEarningsUsd, 0);
+      const totalPayouts = allUsers.reduce((sum: number, user: User) => sum + user.totalPayoutsUsd, 0);
+      const averageEarningPerUser = totalUsers > 0 ? totalEarnings / totalUsers : 0;
 
-  const sortedUsers = [...filteredUsers].sort((a, b) => {
-    switch (sortBy) {
-      case 'earnings':
-        return b.totalEarnings - a.totalEarnings;
-      case 'payouts':
-        return b.totalPayouts - a.totalPayouts;
-      case 'lastActive':
-        return new Date(b.lastActive).getTime() - new Date(a.lastActive).getTime();
-      case 'created':
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      default:
-        return 0;
+      setStats({
+        totalUsers,
+        activeUsers,
+        blockedUsers,
+        totalEarnings,
+        totalPayouts,
+        averageEarningPerUser
+      });
+    } catch (err) {
+      console.error('User stats error:', err);
     }
-  });
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+    fetchUserStats();
+  }, [fetchUsers, fetchUserStats]);
+
+
+  // Users are already filtered and sorted by the backend
+  const displayUsers = users;
 
   const handleBlockUser = async (userId: string) => {
-    // Implement block user functionality
-    console.log('Block user:', userId);
+    try {
+      setActionLoading(userId);
+      await axios.put(`${API_ENDPOINTS.USERS}/${userId}/block`);
+      await fetchUsers(); // Refresh the list
+      await fetchUserStats(); // Refresh stats
+    } catch (err) {
+      setError('Failed to block user');
+      console.error('Block user error:', err);
+    } finally {
+      setActionLoading(null);
+    }
   };
 
   const handleUnblockUser = async (userId: string) => {
-    // Implement unblock user functionality
-    console.log('Unblock user:', userId);
+    try {
+      setActionLoading(userId);
+      await axios.put(`${API_ENDPOINTS.USERS}/${userId}/unblock`);
+      await fetchUsers(); // Refresh the list
+      await fetchUserStats(); // Refresh stats
+    } catch (err) {
+      setError('Failed to unblock user');
+      console.error('Unblock user error:', err);
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const handleSearch = (value: string) => {
+    setSearchTerm(value);
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+  };
+
+  const handleFilterChange = (value: 'all' | 'active' | 'blocked') => {
+    setFilterStatus(value);
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+  };
+
+  const handleSortChange = (value: 'totalEarningsUsd' | 'totalPayoutsUsd' | 'lastActivity' | 'createdAt') => {
+    setSortBy(value);
+    setPagination(prev => ({ ...prev, page: 1 })); // Reset to first page
+  };
+
+  const handlePageChange = (page: number) => {
+    setPagination(prev => ({ ...prev, page }));
   };
 
   if (loading) {
@@ -209,14 +235,14 @@ export const Users: React.FC = () => {
             type="text"
             placeholder="Search by device ID..."
             value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            onChange={(e) => handleSearch(e.target.value)}
             className="search-input"
           />
         </div>
         <div className="filter-group">
           <select
             value={filterStatus}
-            onChange={(e) => setFilterStatus(e.target.value as any)}
+            onChange={(e) => handleFilterChange(e.target.value as any)}
             className="filter-select"
           >
             <option value="all">All Users</option>
@@ -227,13 +253,13 @@ export const Users: React.FC = () => {
         <div className="filter-group">
           <select
             value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as any)}
+            onChange={(e) => handleSortChange(e.target.value as any)}
             className="filter-select"
           >
-            <option value="earnings">Sort by Earnings</option>
-            <option value="payouts">Sort by Payouts</option>
-            <option value="lastActive">Sort by Last Active</option>
-            <option value="created">Sort by Created</option>
+            <option value="totalEarningsUsd">Sort by Earnings</option>
+            <option value="totalPayoutsUsd">Sort by Payouts</option>
+            <option value="lastActivity">Sort by Last Active</option>
+            <option value="createdAt">Sort by Created</option>
           </select>
         </div>
       </div>
@@ -254,30 +280,30 @@ export const Users: React.FC = () => {
             </tr>
           </thead>
           <tbody>
-            {sortedUsers.map((user) => (
-              <tr key={user._id} className={user.isBlocked ? 'blocked' : ''}>
+            {displayUsers.map((user) => (
+              <tr key={user._id} className={user.status === 'blocked' ? 'blocked' : ''}>
                 <td>
                   <div className="device-id">
                     {user.deviceId.substring(0, 12)}...
                   </div>
                 </td>
                 <td>
-                  <span className={`status ${user.isBlocked ? 'blocked' : 'active'}`}>
-                    {user.isBlocked ? '🚫 Blocked' : '✅ Active'}
+                  <span className={`status ${user.status === 'blocked' ? 'blocked' : 'active'}`}>
+                    {user.status === 'blocked' ? '🚫 Blocked' : '✅ Active'}
                   </span>
                 </td>
                 <td>
-                  <span className="earnings">${user.totalEarnings.toFixed(2)}</span>
+                  <span className="earnings">${user.totalEarningsUsd.toFixed(2)}</span>
                 </td>
                 <td>
-                  <span className="payouts">${user.totalPayouts.toFixed(2)}</span>
+                  <span className="payouts">${user.totalPayoutsUsd.toFixed(2)}</span>
                 </td>
                 <td>
-                  <span className="count">{user.earningsCount}</span>
+                  <span className="count">{user.totalEarningsUsd > 0 ? 'Yes' : 'No'}</span>
                 </td>
                 <td>
                   <span className="date">
-                    {new Date(user.lastActive).toLocaleDateString()}
+                    {new Date(user.lastActivity).toLocaleDateString()}
                   </span>
                 </td>
                 <td>
@@ -287,19 +313,21 @@ export const Users: React.FC = () => {
                 </td>
                 <td>
                   <div className="actions">
-                    {user.isBlocked ? (
+                    {user.status === 'blocked' ? (
                       <button
                         className="btn-unblock"
                         onClick={() => handleUnblockUser(user._id)}
+                        disabled={actionLoading === user._id}
                       >
-                        Unblock
+                        {actionLoading === user._id ? '⏳' : 'Unblock'}
                       </button>
                     ) : (
                       <button
                         className="btn-block"
                         onClick={() => handleBlockUser(user._id)}
+                        disabled={actionLoading === user._id}
                       >
-                        Block
+                        {actionLoading === user._id ? '⏳' : 'Block'}
                       </button>
                     )}
                     <button className="btn-view">View Details</button>
@@ -311,7 +339,30 @@ export const Users: React.FC = () => {
         </table>
       </div>
 
-      {sortedUsers.length === 0 && (
+      {/* Pagination */}
+      {pagination.pages > 1 && (
+        <div className="pagination">
+          <button
+            onClick={() => handlePageChange(pagination.page - 1)}
+            disabled={pagination.page <= 1}
+            className="pagination-btn"
+          >
+            ← Previous
+          </button>
+          <span className="pagination-info">
+            Page {pagination.page} of {pagination.pages} ({pagination.total} total users)
+          </span>
+          <button
+            onClick={() => handlePageChange(pagination.page + 1)}
+            disabled={pagination.page >= pagination.pages}
+            className="pagination-btn"
+          >
+            Next →
+          </button>
+        </div>
+      )}
+
+      {displayUsers.length === 0 && !loading && (
         <div className="no-users">
           <p>No users found matching your criteria.</p>
         </div>
