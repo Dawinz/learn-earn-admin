@@ -262,7 +262,7 @@ export const Analytics: React.FC = () => {
               <div className="summary-content">
                 <h3>Lesson Completions</h3>
                 <p className="summary-value">
-                  {currentStats?.reduce((sum, stat) => sum + stat.lessons, 0) || 0}
+                  {currentStats?.reduce((sum, stat) => sum + ('lessons' in stat ? stat.lessons : 0), 0) || 0}
                 </p>
                 <p className="summary-change">+22.1% from last period</p>
               </div>
