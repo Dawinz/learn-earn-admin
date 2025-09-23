@@ -19,6 +19,7 @@ export const Layout: React.FC<LayoutProps> = ({ children }) => {
     { name: 'Payouts', href: '/payouts', icon: '💰' },
     { name: 'Lessons', href: '/lessons', icon: '📚' },
     { name: 'Settings', href: '/settings', icon: '⚙️' },
+    { name: 'Version', href: '/version', icon: '📱' },
   ];
 
   return (

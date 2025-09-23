@@ -8,6 +8,7 @@ import { Users } from './pages/Users';
 import { Payouts } from './pages/Payouts';
 import { Lessons } from './pages/Lessons';
 import { Settings } from './pages/Settings';
+import { VersionManagement } from './pages/VersionManagement';
 import { Layout } from './components/Layout';
 import './App.css';
 
@@ -27,6 +28,7 @@ const AppContent: React.FC = () => {
         <Route path="/payouts" element={<Payouts />} />
         <Route path="/lessons" element={<Lessons />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/version" element={<VersionManagement />} />
       </Routes>
     </Layout>
   );
