@@ -40,6 +40,14 @@ interface AnalyticsData {
     totalEarnings: number;
     percentage: number;
   }>;
+  // Real data from API
+  totalUsers?: number;
+  activeUsers?: number;
+  blockedUsers?: number;
+  totalEarningsUsd?: number;
+  totalPayoutsUsd?: number;
+  recentEarnings?: any[];
+  recentPayouts?: any[];
 }
 
 export const Analytics: React.FC = () => {
@@ -56,7 +64,66 @@ export const Analytics: React.FC = () => {
   const fetchAnalytics = async () => {
     try {
       setLoading(true);
-      // Mock data for now - replace with actual API call
+      const response = await fetch(`${import.meta.env.VITE_API_BASE_URL || 'https://learn-and-earn-04ok.onrender.com'}/api/admin/analytics`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('adminToken')}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch analytics data');
+      }
+
+      const apiData = await response.json();
+      
+      // Transform API data to match the expected format
+      const transformedData: AnalyticsData = {
+        dailyStats: generateDailyStats(),
+        weeklyStats: generateWeeklyStats(),
+        monthlyStats: generateMonthlyStats(),
+        topEarners: apiData.recentEarnings?.slice(0, 5).map((earning: any, index: number) => ({
+          deviceId: earning.userId?.deviceId || `user_${index + 1}`,
+          totalEarnings: earning.amountUsd || 0,
+          totalPayouts: 0, // This would need to be calculated from payouts
+          earningsCount: 1
+        })) || [],
+        lessonStats: [], // This would need to be implemented in the backend
+        sourceStats: apiData.recentEarnings?.reduce((acc: any[], earning: any) => {
+          const existing = acc.find(item => item.source === earning.source);
+          if (existing) {
+            existing.totalEarnings += earning.amountUsd || 0;
+          } else {
+            acc.push({
+              source: earning.source || 'unknown',
+              totalEarnings: earning.amountUsd || 0,
+              percentage: 0 // Will be calculated below
+            });
+          }
+          return acc;
+        }, []) || [],
+        // Add real data from API
+        totalUsers: apiData.totalUsers || 0,
+        activeUsers: apiData.activeUsers || 0,
+        blockedUsers: apiData.blockedUsers || 0,
+        totalEarningsUsd: apiData.totalEarningsUsd || 0,
+        totalPayoutsUsd: apiData.totalPayoutsUsd || 0,
+        recentEarnings: apiData.recentEarnings || [],
+        recentPayouts: apiData.recentPayouts || []
+      };
+
+      // Calculate percentages for source stats
+      const totalEarnings = transformedData.sourceStats.reduce((sum, item) => sum + item.totalEarnings, 0);
+      transformedData.sourceStats.forEach(item => {
+        item.percentage = totalEarnings > 0 ? (item.totalEarnings / totalEarnings) * 100 : 0;
+      });
+
+      setData(transformedData);
+      setError(null);
+    } catch (err) {
+      console.error('Analytics error:', err);
+      setError('Failed to load analytics data');
+      // Fallback to mock data if API fails
       const mockData: AnalyticsData = {
         dailyStats: generateDailyStats(),
         weeklyStats: generateWeeklyStats(),
@@ -232,9 +299,9 @@ export const Analytics: React.FC = () => {
               <div className="summary-content">
                 <h3>Total Earnings</h3>
                 <p className="summary-value">
-                  ${currentStats?.reduce((sum, stat) => sum + stat.earnings, 0).toFixed(2) || '0.00'}
+                  ${data?.totalEarningsUsd?.toFixed(2) || '0.00'}
                 </p>
-                <p className="summary-change">+12.5% from last period</p>
+                <p className="summary-change">Real data from database</p>
               </div>
             </div>
             <div className="summary-card">
@@ -242,29 +309,29 @@ export const Analytics: React.FC = () => {
               <div className="summary-content">
                 <h3>Total Payouts</h3>
                 <p className="summary-value">
-                  ${currentStats?.reduce((sum, stat) => sum + stat.payouts, 0).toFixed(2) || '0.00'}
+                  ${data?.totalPayoutsUsd?.toFixed(2) || '0.00'}
                 </p>
-                <p className="summary-change">+8.3% from last period</p>
+                <p className="summary-change">Real data from database</p>
               </div>
             </div>
             <div className="summary-card">
               <div className="summary-icon">👥</div>
               <div className="summary-content">
-                <h3>Active Users</h3>
+                <h3>Total Users</h3>
                 <p className="summary-value">
-                  {currentStats?.reduce((sum, stat) => sum + stat.users, 0) || 0}
+                  {data?.totalUsers || 0}
                 </p>
-                <p className="summary-change">+15.2% from last period</p>
+                <p className="summary-change">Active: {data?.activeUsers || 0} | Blocked: {data?.blockedUsers || 0}</p>
               </div>
             </div>
             <div className="summary-card">
-              <div className="summary-icon">📚</div>
+              <div className="summary-icon">📊</div>
               <div className="summary-content">
-                <h3>Lesson Completions</h3>
+                <h3>Recent Activity</h3>
                 <p className="summary-value">
-                  {currentStats?.reduce((sum, stat) => sum + ('lessons' in stat ? stat.lessons : 0), 0) || 0}
+                  {data?.recentEarnings?.length || 0} earnings
                 </p>
-                <p className="summary-change">+22.1% from last period</p>
+                <p className="summary-change">{data?.recentPayouts?.length || 0} payouts</p>
               </div>
             </div>
           </div>
@@ -275,6 +342,37 @@ export const Analytics: React.FC = () => {
             <div className="chart-placeholder">
               <p>📊 Chart visualization would go here</p>
               <p>Showing {timeRange} data with {currentStats?.length || 0} data points</p>
+            </div>
+          </div>
+
+          {/* Real Data from API */}
+          <div className="real-data-section">
+            <h3>📊 Live Data from Database</h3>
+            <div className="data-grid">
+              <div className="data-card">
+                <h4>Recent Earnings</h4>
+                <div className="data-list">
+                  {data?.recentEarnings?.slice(0, 5).map((earning, index) => (
+                    <div key={index} className="data-item">
+                      <span className="data-label">User: {earning.userId?.deviceId?.substring(0, 8) || 'Unknown'}</span>
+                      <span className="data-value">${earning.amountUsd?.toFixed(2) || '0.00'}</span>
+                      <span className="data-source">{earning.source || 'Unknown'}</span>
+                    </div>
+                  )) || <p>No recent earnings data</p>}
+                </div>
+              </div>
+              <div className="data-card">
+                <h4>Recent Payouts</h4>
+                <div className="data-list">
+                  {data?.recentPayouts?.slice(0, 5).map((payout, index) => (
+                    <div key={index} className="data-item">
+                      <span className="data-label">User: {payout.userId?.deviceId?.substring(0, 8) || 'Unknown'}</span>
+                      <span className="data-value">${payout.amountUsd?.toFixed(2) || '0.00'}</span>
+                      <span className="data-status">{payout.status || 'Unknown'}</span>
+                    </div>
+                  )) || <p>No recent payouts data</p>}
+                </div>
+              </div>
             </div>
           </div>
         </div>

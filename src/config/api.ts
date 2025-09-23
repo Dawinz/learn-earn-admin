@@ -1,5 +1,5 @@
 // API Configuration
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://learn-earn-backend-1.onrender.com';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://learn-and-earn-04ok.onrender.com';
 
 export const API_ENDPOINTS = {
   // Admin endpoints
